@@ -12,8 +12,7 @@
 ### Шаг 1. Сборка и загрузка образа
 
 ```bash
-# выполняйте из папки block-01-k8s-basics (там лежит app/ и templates/)
-cd ..   # если вы сейчас в tasks/
+# выполняйте из корня репозитория (там лежат app/ и templates/)
 docker build -t calc-app:v1 app/
 minikube image load calc-app:v1
 ```
