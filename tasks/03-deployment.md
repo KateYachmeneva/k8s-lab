@@ -68,21 +68,28 @@ Deployment → ReplicaSet → Pod по именам объектов.
 
 ### Шаг 5. Обновление и откат
 
+Симулируем выход новой версии приложения:
 ```bash
-kubectl set image deployment/calc-app calc-app=calc-app:v1 -n demo
+docker tag calc-app:v1 calc-app:v2        # "собрали" версию v2
+minikube image load calc-app:v2
+kubectl set image deployment/calc-app calc-app=calc-app:v2 -n demo
+kubectl rollout status deployment/calc-app -n demo
+```
+Ожидается: поды по очереди пересоздаются с новым образом (rolling update),
+в конце `successfully rolled out`.
+
+```bash
 kubectl rollout history deployment/calc-app -n demo
 ```
-Ожидается: появилась ревизия 2 (даже если образ «тот же» — команда
-зафиксировала новую ревизию шаблона).
+Ожидается: две ревизии (№1 — v1, №2 — v2).
 
 ```bash
 kubectl rollout undo deployment/calc-app -n demo
 kubectl rollout status deployment/calc-app -n demo
 ```
-Ожидается: `deployment "calc-app" successfully rolled out` — откат
-к ревизии 1.
+Ожидается: откат на ревизию 1, `successfully rolled out`.
 
-✔ **Контрольная точка:** в `rollout history` минимум две ревизии,
+✔ **Контрольная точка:** в `rollout history` две ревизии,
 откат выполнен успешно.
 
 ---
