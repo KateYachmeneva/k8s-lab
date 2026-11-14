@@ -11,12 +11,12 @@
 
 ### Шаг 1. Подготовка наблюдения
 
-Во втором терминале:
+Откройте **второй терминал** и запустите в нём:
 ```bash
 kubectl get pods -n demo -w
 ```
 
-### Шаг 2. Удаляем под
+### Шаг 2. Удаляем под (симуляция потери пода)
 
 В первом терминале:
 ```bash
@@ -24,39 +24,48 @@ kubectl get pods -n demo                    # выберите имя любог
 kubectl delete pod <имя-пода> -n demo
 ```
 
-Во втором терминале — сразу видно:
-```
-calc-app-...-aaaaa   Terminating
-calc-app-...-ddddd   Pending
-calc-app-...-ddddd   ContainerCreating
-calc-app-...-ddddd   Running
-```
+Во втором терминале сразу видно, как под уходит в `Terminating`,
+а ReplicaSet создаёт новый: `Pending → ContainerCreating → Running`.
 
 ```bash
 kubectl get pods -n demo
 ```
 Ожидается: снова 3 пода Running, но у нового пода **другое имя и другой IP**.
-Сравните с IP из задания 4.
 
-✔ **Контрольная точка:** под пересоздан ReplicaSet'ом автоматически.
+✔ **Контрольная точка:** под пересоздан автоматически, без вашего участия.
 
-### Шаг 3. «Падает» процесс внутри контейнера
+### Шаг 3. «Падает» процесс в контейнере (симуляция сбоя приложения)
 
+Запустим рядом демо-под, чьё приложение падает через 3 секунды после старта:
 ```bash
-POD=$(kubectl get pod -n demo -l app=calc-app -o name | head -1)
-kubectl exec -n demo $POD -- kill 1
+kubectl run crash-demo --image=python:3.12-slim --restart=Always -n demo -- \
+  python3 -c "import time; time.sleep(3); exit(1)"
 ```
-`exit code 137` — это нормально: мы отправили SIGKILL главному процессу.
 
+Подождите ~30 секунд и смотрите:
 ```bash
 kubectl get pods -n demo
 ```
-Ожидается: под **тот же** (имя и IP не изменились), но в колонке
-**RESTARTS** у него прибавилась единица — kubelet перезапустил контейнер
-(restartPolicy: Always).
+Ожидается:
+```
+crash-demo   0/1   Error     3 (50s ago)   71s
+```
+Колонка **RESTARTS** растёт: kubelet снова и снова перезапускает упавший
+контейнер. Статус перейдёт в `CrashLoopBackOff` — это нарастающая пауза
+между перезапусками (backoff), а не поломка кластера.
+
+> Почему не `kill 1` внутри пода приложения? Процесс с PID 1 в контейнере
+> защищён ядром от сигналов изнутри — отдельный падающий под показывает
+> тот же механизм restartPolicy надёжнее.
+
+Уберите демо-под:
+```bash
+kubectl delete pod crash-demo -n demo
+```
 
 ✔ **Контрольная точка:** вы видите разницу двух механизмов:
-пересоздание пода (шаг 2) vs перезапуск контейнера (шаг 3).
+пересоздание пода (ReplicaSet, шаг 2) vs перезапуск контейнера
+(kubelet + restartPolicy, шаг 3).
 
 ### Шаг 4. Хронология событий
 
@@ -64,7 +73,7 @@ kubectl get pods -n demo
 kubectl get events -n demo --sort-by=.lastTimestamp | tail -10
 ```
 Найдите события ваших экспериментов: `Killing`, `Scheduled`, `Created`,
-`Started`, `Pulled`.
+`Started`, `BackOff`.
 
 ### Шаг 5. Граница самовосстановления
 
@@ -87,7 +96,7 @@ kubectl rollout status deployment/calc-app -n demo
 ## Что сдать в отчёте
 
 1. Скриншот терминала с `-w` в момент пересоздания пода
-2. Вывод `kubectl get pods` после `kill 1` с выросшим RESTARTS
+2. Вывод `kubectl get pods` с растущим RESTARTS у crash-demo
 3. Ответы: кто восстанавливает под, а кто — контейнер?
    Почему после удаления deployment ничего не восстановилось?
 
@@ -95,6 +104,5 @@ kubectl rollout status deployment/calc-app -n demo
 
 | Симптом | Решение |
 |---|---|
-| RESTARTS не растёт | убивали не тот под / смотрели не тот; проверьте имя |
-| `error: cannot exec` | под ещё не Running — подождите |
+| crash-demo не появляется | проверьте `kubectl describe pod crash-demo -n demo` |
 | Под не пересоздался | удалили «голый» под из задания 2, а не под deployment'а |
